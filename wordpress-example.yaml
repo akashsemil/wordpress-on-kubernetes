@@ -1,0 +1,129 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wordpress-example-nginx-conf
+  labels:
+    app: wordpress-example
+data:
+  wordpress-example.conf: |
+    upstream php {
+            server localhost:9000;
+    }
+    server {
+            listen 80 default_server;
+            #server_name wordpress.example.com;
+            root /var/www/html;
+            index index.php;
+            location / {
+                    try_files $uri $uri/ /index.php?$args;
+            }
+            location ~ \.php$ {
+                    include fastcgi_params;
+                    fastcgi_intercept_errors on;
+                    fastcgi_pass php;
+                    fastcgi_param  SCRIPT_FILENAME $document_root$fastcgi_script_name;
+            }
+            location ~* \.(js|css|png|jpg|jpeg|gif|ico)$ {
+                    expires max;
+                    log_not_found off;
+            }
+    }
+---
+apiVersion: v1
+kind: Secret
+metadata: 
+  name: wordpress-example-mysql
+  labels:
+    app: wordpress-example
+stringData:
+  MYSQL_ROOT_PASSWORD: "SQL@root"
+  MYSQL_PASSWORD: "SQL@user"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wordpress-example-deployment
+  labels:
+    app: wordpress-example
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wordpress-example
+  template:
+    metadata:
+      labels:
+        app: wordpress-example
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:stable-alpine
+          volumeMounts:
+            - name: nginx-conf
+              mountPath: /etc/nginx/conf.d/
+            - name: wordpress-root
+              mountPath: /var/www/html
+          ports:
+            - containerPort: 80
+        - name: wordpress-php-fpm
+          image: wordpress:5.5.3-php7.3-fpm-alpine
+          env:
+            - name: WORDPRESS_DB_HOST
+              value: "127.0.0.1:3306"
+            - name: WORDPRESS_DB_USER
+              value: "wordpress"
+            - name: WORDPRESS_DB_NAME
+              value: "wordpress"
+            - name: WORDPRESS_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: wordpress-example-mysql
+                  key: MYSQL_PASSWORD
+          volumeMounts:
+            - name: wordpress-root
+              mountPath: /var/www/html
+        - name: database
+          image: mariadb:10.5
+          env:
+            - name: MYSQL_DATABASE
+              value: "wordpress"
+            - name: MYSQL_USER
+              value: "wordpress"
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: wordpress-example-mysql
+                  key: MYSQL_ROOT_PASSWORD
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: wordpress-example-mysql
+                  key: MYSQL_PASSWORD
+          volumeMounts:
+            - name: database-root
+              mountPath: /var/lib/mysql
+      volumes:
+        - name: nginx-conf
+          configMap:
+            name: wordpress-example-nginx-conf 
+        - name: wordpress-root
+          hostPath:
+            path: /var/wordpress-example/wordpress-root
+        - name: database-root
+          hostPath:
+            path: /var/wordpress-example/wordpress-database
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wordpress-example-service
+  labels:
+    app: wordpress-example
+spec:
+  type: LoadBalancer
+  selector:
+    app: wordpress-example
+  ports:
+    - port: 80
+      targetPort: 80
+      protocol: TCP
