@@ -31,7 +31,7 @@ Use the EXTERNAL-IP assigned to the service
 ```bash
 $ kubectl get svc -l app=wordpress-example
 ```
-If EXTERNAL-IP is <pending> make sure to run following and check again
+If EXTERNAL-IP status is "pending" make sure to run following and check again
 ```bash
 $ minikube tunnel
 ```
